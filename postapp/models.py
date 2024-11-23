@@ -13,6 +13,8 @@ class Bookmark(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE)
     post = models.ForeignKey('Post', on_delete=models.CASCADE)
 
+    
+
 # Following Models
 class Following(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE)
@@ -67,7 +69,7 @@ class Post(models.Model):
     caption  = models.TextField()
     posted_by =  models.ForeignKey(User, on_delete=models.CASCADE,related_name="posted_by")
     likes = models.ManyToManyField(User)
-    brand = models.ForeignKey(Brand,on_delete=models.CASCADE)
+    brand = models.ForeignKey(Brand,on_delete=models.CASCADE,default="prade")
     posted_on = models.DateTimeField(auto_now=True,null=True)
     active  = models.BooleanField(default=True)
 

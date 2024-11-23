@@ -7,7 +7,7 @@ from .managers import UserManager
 
 class User(AbstractBaseUser, PermissionsMixin):
     username = models.CharField(max_length=100, unique=True)
-    email = models.EmailField(unique=True )
+    email = models.EmailField(unique=True)
     first_name = models.CharField( max_length=30, blank=True)
     last_name = models.CharField( max_length=30, blank=True)    
     registered_on=models.DateField(auto_now_add=True)
@@ -17,7 +17,7 @@ class User(AbstractBaseUser, PermissionsMixin):
     profile_picture = models.ImageField(upload_to="profile",blank=True)
     objects = UserManager()
     USERNAME_FIELD = 'username'
-    REQUIRED_FIELDS = []
+    REQUIRED_FIELDS = ['email']
 
     class Meta:
         verbose_name = 'user'

@@ -1,79 +1,83 @@
-from django.contrib.auth import update_session_auth_hash
 from django.db.models import Count, Case, When, Q
 from django_filters.rest_framework import DjangoFilterBackend
-from rest_framework import pagination, status
+from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.viewsets import ModelViewSet
-
-from account.models import User
-from account.serializers import My_Profile_Serializer
-from .models import Post, Bookmark, PostPhoto, PostVideo, PostLink, Following, Brand
+from django.shortcuts import get_object_or_404
+from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiExample
+from drf_spectacular.types import OpenApiTypes
 from .serializers import *
+from .models import Post, Bookmark, PostPhoto, PostVideo, PostLink, Following, Brand
+from .pagination import CustomPagination
 from .filters import PostFilter, BookmarkFilter
 
 
-class CustomPagination(pagination.PageNumberPagination):
-    page_size = 100
-    page_size_query_param = 'page_size'   
-    page_query_param = 'page'
-    
-class PostViewset(ModelViewSet):
+
+class PostViewSet(ModelViewSet):
     pagination_class = CustomPagination
     filter_backends = [DjangoFilterBackend]
     filterset_class = PostFilter
     queryset = Post.objects.filter(active=True)
     serializer_class = PostSerializer
+    http_method_names = ['get', 'post', 'delete', 'patch']
+
+    def get_queryset(self):
+        """
+        Return posts for the authenticated user, ensuring that only active posts are returned.
+        """
+        return super().get_queryset().filter(posted_by=self.request.user)
+
     def create(self, request, *args, **kwargs):
+        """
+        Create a new post, ensuring the post is associated with the authenticated user.
+        """
         data = request.data
-        photos = request.FILES.getlist('post_photos')
-        links = data.get('post_links', [])
-        videos = request.FILES.getlist('post_videos')
+        serializer = PostSerializer(data=data)
 
-        serializer = PostCreateSerializer1(data=data)
         if serializer.is_valid():
-            post = serializer.save(posted_by=request.user)
-
-            # Save related photos, links, and videos
-            for photo in photos:
-                PostPhoto.objects.create(post=post, photo=photo)
-            for link in links:
-                PostLink.objects.create(post=post, link=link)
-            for video in videos:
-                PostVideo.objects.create(post=post, video=video)
-
+            serializer.save(posted_by=request.user)  # Save with the authenticated user
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+    def perform_destroy(self, instance):
+        """
+        Delete related photos, videos, and links before deleting the post.
+        """
+        # Deleting related objects manually, can be handled by cascade delete as well.
+        instance.post_photos.all().delete()
+        instance.post_videos.all().delete()
+        instance.post_links.all().delete()
+        instance.delete()
+
     def destroy(self, request, *args, **kwargs):
-        try:
-            post = Post.objects.get(id=kwargs['pk'], posted_by=request.user)
-            post.delete()
-            return Response({"message": "Post deleted successfully."}, status=status.HTTP_204_NO_CONTENT)
-        except Post.DoesNotExist:
-            return Response({"error": "Post not found or you don't have permission."}, status=status.HTTP_404_NOT_FOUND)
+        """
+        Handle deletion of a post along with related objects.
+        """
+        instance = self.get_object()
+        self.perform_destroy(instance)
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
     def partial_update(self, request, *args, **kwargs):
-        try:
-            post = Post.objects.get(id=kwargs['pk'], posted_by=request.user)
-            active = request.data.get('active')
-            if active is not None:
-                post.active = active
-                post.save()
-                return Response({"message": "Post status updated."}, status=status.HTTP_200_OK)
-            return Response({"error": "Active field is required."}, status=status.HTTP_400_BAD_REQUEST)
-        except Post.DoesNotExist:
-            return Response({"error": "Post not found or you don't have permission."}, status=status.HTTP_404_NOT_FOUND)
+        """
+        Update a post's data, allowing partial updates (e.g., only update 'active' field).
+        """
+        post = get_object_or_404(Post, id=kwargs['pk'], posted_by=request.user)
+        serializer = PostUpdateSerializer(post, data=request.data, partial=True)
 
-
+        if serializer.is_valid():
+            serializer.save()  # Save the partial update
+            return Response({"message": "Post status updated successfully."}, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
 class BookmarkViewSet(ModelViewSet):
     queryset = Bookmark.objects.all()
     serializer_class = BookmarkAddSerializer
     filterset_class = BookmarkFilter
-
+    http_method_names = ['get', 'post', 'delete', 'patch']
 
     def get_queryset(self):
-        return Bookmark.objects.all()
+        return super().get_queryset().filter(posted_by=self.request.user)
     
     def list(self, request, *args, **kwargs):
         bookmarks = self.get_queryset()
@@ -83,7 +87,6 @@ class BookmarkViewSet(ModelViewSet):
     def create(self, request, *args, **kwargs):
         return super().create(request, *args, **kwargs)
         
-
     def partial_update(self, request, *args, **kwargs):
         bookmark = self.get_object()
         serializer = self.get_serializer(bookmark, data=request.data, partial=True)
@@ -98,74 +101,44 @@ class BookmarkViewSet(ModelViewSet):
         return Response({"message": "Bookmark Removed"}, status=status.HTTP_204_NO_CONTENT)
 
 
-class ReportView(APIView):
-    def post(self, request, *args, **kwargs):
-        serializer = ReportPostSerializer(data=request.data)
+class ReportPostViewSet(ModelViewSet):
+    queryset = ReportPost.objects.all()
+    serializer_class = ReportCreateSerializer
+    http_method_names = ['post']
+
+    def get_queryset(self):
+        return super().get_queryset().filter(posted_by=self.request.user)
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
         if serializer.is_valid():
             serializer.save(reported_by=request.user)
             return Response(serializer.data, status=status.HTTP_201_CREATED)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)    
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)  
 
-class LikeUnlikeView(APIView):
-    def get(self,request,pk):
-        data =  dict()    
-        post_like_unlike = Post.like_or_unlike(id=pk,user=request.user)
-        post = Post.objects.get(id=pk)
-        likes_count = post.likes.count()
-        if post_like_unlike:    
-            data['liked'] = True
-            data['like_count'] = likes_count
-        else:
-            data['like_count'] = likes_count
-            
-        return Response(data)
+class LikeUnlikeViewSet(ModelViewSet):
+    queryset = Post.objects.all()
+    serializer_class = PostViewSerializer  # Assuming you have a serializer for Post
+    http_method_names = ['get']
 
-
-
-class PostFilter(APIView):
-    authentication_classes = ()
-    permission_classes = ()
-
-    def post(self, request):
-        hashtag = request.data.get('hashtag', '')
-        brand = request.data.get('brand', '')
-        category = request.data.get('category', '')
-
-        if not hashtag and not brand and not category:
-            return Response({"message": "Please provide a hashtag, brand name, or category."}, status=400)
-
-        filtered_posts = Post.objects.all()
-
-        if hashtag:
-            filtered_posts = filtered_posts.filter(Q(caption__icontains=f"#{hashtag}"))
-
-        if brand:
-            filtered_posts = filtered_posts.filter(brand__name__icontains=brand)
-        
-        if category:
-            filtered_posts = filtered_posts.filter(category__name__icontains=category)
-
-        if not filtered_posts.exists():
-            return Response({"message": "No posts found with the given criteria."}, status=404)
+    def get_queryset(self):
+        return super().get_queryset().filter(posted_by=self.request.user)
     
-        serializer = PostViewSerializer(filtered_posts, many=True)
-        return Response(serializer.data)
+    def get_serializer_class(self):
+        return self.serializer_class
 
+    def retrieve(self, request, post_id=None, *args, **kwargs):
+        post = self.get_object()
+        data = dict()
+        post_like_unlike = Post.like_or_unlike(id=post_id, user=request.user)
+        likes_count = post.likes.count()
+        if post_like_unlike:
+            data['liked'] = True
+        data['like_count'] = likes_count
 
-class FollowingPostFilter(APIView):
-    def get(self, request, *args, **kwargs):  
-        following_users = Following.objects.filter(user= request.user).values_list('following_user', flat=True)
-        following_brands = Following.objects.filter(user= request.user, brand__isnull=False).values_list('brand', flat=True)
-        following_categories = Following.objects.filter(user= request.user, category__isnull=False).values_list('category', flat=True)
-
-        posts = Post.objects.filter(Q(posted_by__in=following_users)|Q(brand__in=following_brands)|Q(category__in=following_categories))
-
-        serializer = PostViewSerializer(posts, many=True)
-        return Response(serializer.data, status=status.HTTP_200_OK)
+        return Response(data)    
 
 class Suggestion(APIView):
-    authentication_classes = ()
-    permission_classes = ()
 
     def get(self,request):
         get_most_followed_categories_id = set(Following.objects.filter(category__isnull=False).annotate(count=Count('category')).order_by('count').values_list('category_id', flat=True))

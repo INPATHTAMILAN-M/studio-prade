@@ -18,7 +18,7 @@ class PostVideoSerializer(serializers.ModelSerializer):
 class PostLinkSerializer(serializers.ModelSerializer):
     class Meta:
         model = PostLink
-        fields = ['get_current_details',]
+        fields = '__all__'
 
 #Serializer for post.
 class PostSerializer(serializers.ModelSerializer):
@@ -31,7 +31,34 @@ class PostSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Post
-        fields = ('id', 'category', 'caption','posted_by','brand','posted_on','post_photos','post_videos','post_links')
+        fields = ('id', 'category', 'caption','posted_by','brand','posted_on',
+                  'post_photos','post_videos','post_links')
+        
+    def create(self, validated_data):
+        # Extract related data from validated data
+        photos_data = validated_data.pop('post_photos', [])
+        videos_data = validated_data.pop('post_videos', [])
+        links_data = validated_data.pop('post_links', [])
+
+        # Create the Post instance
+        post = Post.objects.create(**validated_data)
+
+        # Create related post photos, videos, and links
+        for photo_data in photos_data:
+            PostPhoto.objects.create(post=post, **photo_data)
+
+        for video_data in videos_data:
+            PostVideo.objects.create(post=post, **video_data)
+
+        for link_data in links_data:
+            PostLink.objects.create(post=post, **link_data)
+
+        return post
+    
+class PostUpdateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Post
+        fields = ['caption',"active"]
 
 #Serializer for bookmarked posts.
 class BookmarkGetSerializer(serializers.ModelSerializer):
@@ -44,7 +71,8 @@ class BookmarkGetSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Bookmark
-        fields = ['post_id','post_category','post_name','post_caption','post_likes_count','post_brand', 'post_posted_on']
+        fields = ['post_id','post_category','post_name','post_caption',
+                  'post_likes_count','post_brand', 'post_posted_on']
 
     def get_post_likes_count(self, obj):
         return obj.post.get_likes_count()
@@ -56,7 +84,7 @@ class BookmarkAddSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
 #Serializer for reporting a post.
-class ReportPostSerializer(serializers.ModelSerializer):
+class ReportCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = ReportPost
         fields = ['post','message']
@@ -92,7 +120,7 @@ class CreatePostPhotoSerializer(serializers.ModelSerializer):
         fields = ['photo']
 
 #serializer for creating a new post.
-class PostCreateSerializer1(serializers.ModelSerializer):
+class PostCreateSerializer(serializers.ModelSerializer):
     post_photos = CreatePostPhotoSerializer(many=True, required=False)
     post_links = CreatePostLinkSerializer(many=True, required=False)
     post_videos = CreatePostVideoSerializer(many=True, required=False)
