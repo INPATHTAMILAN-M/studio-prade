@@ -7,10 +7,10 @@ from rest_framework.viewsets import ModelViewSet
 from django.shortcuts import get_object_or_404
 from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiExample
 from drf_spectacular.types import OpenApiTypes
-from .serializers import *
+from .filters import PostFilter, BookmarkFilter
 from .models import Post, Bookmark, PostPhoto, PostVideo, PostLink, Following, Brand
 from .pagination import CustomPagination
-from .filters import PostFilter, BookmarkFilter
+from .serializers import * 
 
 
 
@@ -77,7 +77,7 @@ class BookmarkViewSet(ModelViewSet):
     http_method_names = ['get', 'post', 'delete', 'patch']
 
     def get_queryset(self):
-        return super().get_queryset().filter(posted_by=self.request.user)
+        return super().get_queryset().filter(user=self.request.user)
     
     def list(self, request, *args, **kwargs):
         bookmarks = self.get_queryset()
