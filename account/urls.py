@@ -11,6 +11,6 @@ from . import views
         
 # ]
 
-# urlpatterns = [
-#     path('', include(router.urls)),  # Includes all router-generated URLs
-# ]
+urlpatterns = [
+    path('', include(router.urls)),  # Includes all router-generated URLs
+]

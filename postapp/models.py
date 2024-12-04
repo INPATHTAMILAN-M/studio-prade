@@ -17,7 +17,7 @@ class Bookmark(models.Model):
 
 # Following Models
 class Following(models.Model):
-    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    user = models.ForeignKey(User, on_delete=models.CASCADE,related_name="user")
     brand = models.ForeignKey('Brand', on_delete=models.CASCADE,null=True,blank=True)
     category = models.ForeignKey('PostCategory',on_delete=models.CASCADE,null=True,blank=True)
     following_user = models.ForeignKey(User, on_delete=models.CASCADE,null=True,blank=True,related_name="following_user")
@@ -35,9 +35,11 @@ class PostCategory(models.Model):
     @property
     def post_count(self):
         return self.post_set.filter(active=True).count()
+    
     @property
     def followers_count(self):
         return Following.objects.filter(category=self).count()  
+    
     @property
     def posts(self):
         return Post.objects.filter(category=self)

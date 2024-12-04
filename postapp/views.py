@@ -5,33 +5,29 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.viewsets import ModelViewSet
 from django.shortcuts import get_object_or_404
-from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiExample
-from drf_spectacular.types import OpenApiTypes
+from rest_framework.permissions import IsAuthenticated
 from .filters import PostFilter, BookmarkFilter
-from .models import Post, Bookmark, PostPhoto, PostVideo, PostLink, Following, Brand
+from .models import Post, Bookmark, Following, Brand
 from .pagination import CustomPagination
 from .serializers import * 
+from .permissions.custom_permission import IsAuthenticatedForGET
 
 
 
 class PostViewSet(ModelViewSet):
+    queryset = Post.objects.filter(active=True)
+    serializer_class = PostSerializer
     pagination_class = CustomPagination
     filter_backends = [DjangoFilterBackend]
     filterset_class = PostFilter
-    queryset = Post.objects.filter(active=True)
-    serializer_class = PostSerializer
+    permission_classes = [IsAuthenticatedForGET]
     http_method_names = ['get', 'post', 'delete', 'patch']
 
-    def get_queryset(self):
-        """
-        Return posts for the authenticated user, ensuring that only active posts are returned.
-        """
-        return super().get_queryset().filter(posted_by=self.request.user)
 
+    def get_queryset(self):
+        return super().get_queryset().filter(posted_by=self.request.user) if self.request.method != "GET" else super().get_queryset()
+    
     def create(self, request, *args, **kwargs):
-        """
-        Create a new post, ensuring the post is associated with the authenticated user.
-        """
         data = request.data
         serializer = PostSerializer(data=data)
 
@@ -41,9 +37,6 @@ class PostViewSet(ModelViewSet):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     def perform_destroy(self, instance):
-        """
-        Delete related photos, videos, and links before deleting the post.
-        """
         # Deleting related objects manually, can be handled by cascade delete as well.
         instance.post_photos.all().delete()
         instance.post_videos.all().delete()
@@ -51,17 +44,11 @@ class PostViewSet(ModelViewSet):
         instance.delete()
 
     def destroy(self, request, *args, **kwargs):
-        """
-        Handle deletion of a post along with related objects.
-        """
         instance = self.get_object()
         self.perform_destroy(instance)
         return Response(status=status.HTTP_204_NO_CONTENT)
 
     def partial_update(self, request, *args, **kwargs):
-        """
-        Update a post's data, allowing partial updates (e.g., only update 'active' field).
-        """
         post = get_object_or_404(Post, id=kwargs['pk'], posted_by=request.user)
         serializer = PostUpdateSerializer(post, data=request.data, partial=True)
 
@@ -74,6 +61,7 @@ class BookmarkViewSet(ModelViewSet):
     queryset = Bookmark.objects.all()
     serializer_class = BookmarkAddSerializer
     filterset_class = BookmarkFilter
+    permission_classes = [IsAuthenticated] 
     http_method_names = ['get', 'post', 'delete', 'patch']
 
     def get_queryset(self):
@@ -104,6 +92,7 @@ class BookmarkViewSet(ModelViewSet):
 class ReportPostViewSet(ModelViewSet):
     queryset = ReportPost.objects.all()
     serializer_class = ReportCreateSerializer
+    permission_classes = [IsAuthenticated] 
     http_method_names = ['post']
 
     def get_queryset(self):
@@ -118,7 +107,8 @@ class ReportPostViewSet(ModelViewSet):
 
 class LikeUnlikeViewSet(ModelViewSet):
     queryset = Post.objects.all()
-    serializer_class = PostViewSerializer  # Assuming you have a serializer for Post
+    serializer_class = PostViewSerializer 
+    permission_classes = [IsAuthenticated] 
     http_method_names = ['get']
 
     def get_queryset(self):
